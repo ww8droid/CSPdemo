@@ -1,0 +1,49 @@
+Run server
+
+python -m venv venv && source venv/bin/activate
+pip install flask
+python app.py
+
+
+Visit:
+
+    / → Example 1
+
+    /example2 → Example 2
+
+    /example3?c=<img src=x onerror=alert(1)> → Example 3
+	
+	
+	| # | Title                               | “Looks Secure”                                               | Why It Fails                                                                                                         | Fix                                                                                                          |
+| - | ----------------------------------- | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| 1 | Hash CSP + Dynamic Script Injection | Uses SHA‑256 hash, so only known inline scripts look allowed | `createElement('script').src = attacker-controlled` loads any URL – `script-src` still permits external scripts      | Lock `script-src` to `'self'`/nonces or add `'strict-dynamic'`; never let untrusted data become a script URL |
+| 2 | `'self'` + Open Redirect            | Only same‑origin scripts allowed                             | Browser fetches `/redirect?...`, sees it as “self,” follows 302 to attacker JS                                       | Disallow open redirects or serve them from another origin; audit redirects; add SRI                          |
+| 3 | Nonce CSP + DOM Sink                | All inline JS must carry the right nonce                     | HTML injected via `innerHTML` executes event handlers (`onerror`/`onclick`) – CSP’s `script-src` doesn’t govern them | Strip/encode HTML, use `.textContent` or DOMPurify; keep dangerous sinks out of code paths                   |
+
+
+Slide outline (one per example)
+
+Slide X — Secure + Secure = Insecure #N
+
+    CSP header (green checkmark): show the snippet
+
+    App code (green checkmark): highlight the “secure” bit (nonce/hash, 'self', etc.)
+
+    Hidden pitfall (red exclamation): code line with arrow to vulnerable part
+
+    Demo URL: e.g., http://localhost:5000/example2
+
+    Fix bullet list
+
+Add a final recap slide:
+
+    Take‑aways
+
+        CSP is resource‑centric — it can’t stop risky DOM APIs or bad redirects.
+
+        Combine CSP with HTML/JS hygiene, SRI, and redirect hardening.
+
+        Trust but verify: scan for toxic combos after every code/infra change.
+		
+		
+		

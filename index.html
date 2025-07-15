@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><title>CSP Toxic Combo Demo</title>
+</head>
+<body style="font-family:sans-serif">
+  {{ body|safe }}
+  <hr><p><a href="/">Example 1</a> |
+  <a href="/example2">Example 2</a> |
+  <a href="/example3?c=%3Cimg%20src%3Dx%20onerror%3Dalert(1)%3E">Example 3</a></p>
+</body>
+</html>

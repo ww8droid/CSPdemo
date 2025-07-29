@@ -1,0 +1,29 @@
+How to run
+
+# 1) Create and activate venv
+python -m venv venv
+source venv/bin/activate   # (Windows: venv\Scripts\activate)
+
+# 2) Install Flask
+pip install flask
+
+# 3) Start the attacker server
+python evil_server.py  # port 9000
+
+# 4) Start each example (in separate terminals)
+python example1_dynamic_hash.py  # :5001
+python example2_self_open_redirect.py  # :5002
+python example3_nonce_dom_sink.py  # :5003
+
+
+Run all servers:
+python run_all.py
+
+use ctrl+c to stop everything
+
+
+csp_toxic_combo_demo/
+├── example1_dynamic_hash.py          # Port 5001
+├── example2_self_open_redirect.py    # Port 5002
+├── example3_nonce_dom_sink.py        # Port 5003
+├── evil_server.py                    # Port 9000 (attacker host)

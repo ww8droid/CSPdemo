@@ -1,136 +1,94 @@
-from flask import Flask, Response, render_template_string, request
+
+from flask import Flask, request, render_template_string, make_response
 import secrets
 
 app = Flask(__name__)
-REPORTS = []
+
+comments = []
 
 TEMPLATE = """
 <!doctype html>
 <html>
 <head>
-  <meta charset="utf-8" />
-  <title>Example 3 — Nonce CSP + innerHTML Sink</title>
+  <meta charset="utf-8">
+  <title>Product Review</title>
   <style>
-    body{font-family:sans-serif;max-width:1000px;margin:40px auto;}
-    pre{background:#f6f8fa;padding:10px;border-radius:6px;white-space:pre-wrap;}
-    code{background:#eee;padding:0 3px;border-radius:3px;}
-    .cols{display:flex;gap:20px;}
-    .col{flex:1;}
-    .box{border:1px solid #ccc;padding:10px;border-radius:6px;min-height:80px;margin-bottom:10px;}
-    .danger{border-color:#e00;background:#fff5f5;}
-    .safe{border-color:#0a0;background:#f5fff5;}
+    body { font-family: sans-serif; margin: 2em; }
+    .comment-box { margin-top: 1em; }
+    .comment { background: #f0f0f0; padding: 0.5em; border-radius: 5px; margin: 0.5em 0; }
+    .csp-header { background: #fffae6; padding: 1em; border: 1px dashed #ccc; margin-bottom: 1em; }
+    .toggle { margin-top: 1em; }
   </style>
+  <script nonce="{{ nonce }}">
+    let useInnerHTML = true;
+
+    function toggleMode() {
+      useInnerHTML = !useInnerHTML;
+      document.getElementById('mode-label').innerText = useInnerHTML ? "innerHTML (Unsafe)" : "textContent (Safe)";
+    }
+
+    function submitComment() {
+      const input = document.getElementById('comment-input');
+      fetch('/submit', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: 'comment=' + encodeURIComponent(input.value)
+      }).then(() => window.location.reload());
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      const comments = {{ comments | tojson }};
+      const container = document.getElementById('comments');
+      comments.forEach(c => {
+        const div = document.createElement('div');
+        div.className = "comment";
+        if (useInnerHTML) {
+          div.innerHTML = c;
+        } else {
+          div.textContent = c;
+        }
+        container.appendChild(div);
+      });
+    });
+  </script>
 </head>
 <body>
-  <h1>Example 3 — Nonce CSP + innerHTML Sink</h1>
-  <p><strong>Looks secure</strong> because all inline scripts require a nonce, but in <em>insecure mode</em> we inject untrusted HTML with <code>innerHTML</code>, so event handlers like <code>onerror</code> still execute.</p>
+  <h1>🧪 Product Review</h1>
 
-  <p>
-    Mode:
-    {% if mode == 'secure' %}<strong>SECURE</strong>{% else %}<a href="?mode=secure">SECURE</a>{% endif %} |
-    {% if mode == 'insecure' %}<strong>INSECURE</strong>{% else %}<a href="?mode=insecure">INSECURE</a>{% endif %}
-  </p>
-
-  <h3>Current CSP header</h3>
-  <pre>{{ csp }}</pre>
-
-  <h3>Try It</h3>
-  <form id="comment-form">
-    <label>Enter a comment (try: <code>&lt;img src=x onerror=alert(1)&gt;</code>)</label><br>
-    <textarea id="comment" rows="3" style="width:100%"></textarea><br><br>
-    <button type="submit">Submit</button>
-  </form>
-
-  <div class="cols">
-    <div class="col">
-      <h3>Raw API Response</h3>
-      <div id="api" class="box"></div>
-    </div>
-    <div class="col">
-      <h3>{{ insecure_label }}</h3>
-      <div id="unsafe" class="box {{ insecure_class }}"></div>
-    </div>
-    <div class="col">
-      <h3>Safe Render (textContent)</h3>
-      <div id="safe" class="box safe"></div>
-    </div>
+  <div class="csp-header">
+    <strong>CSP Header:</strong><br>
+    Content-Security-Policy: script-src 'self' 'nonce-{{ nonce }}'
   </div>
 
-  <h3>Client-side Code (executed)</h3>
-  <pre>{{ client_js }}</pre>
+  <div>
+    <label for="comment-input">Leave a comment:</label><br>
+    <input id="comment-input" size="60" placeholder="Try: &lt;img src=x onerror=alert(1)&gt;">
+    <button onclick="submitComment()">Submit</button>
+  </div>
 
-  <h3>CSP Violation Reports ({{ reports|length }})</h3>
-  <pre>{{ reports|tojson(indent=2) }}</pre>
+  <div class="toggle">
+    <button onclick="toggleMode()">Toggle Rendering Mode</button>
+    <span id="mode-label">innerHTML (Unsafe)</span>
+  </div>
 
-  <script nonce="{{ nonce }}">
-  {{ client_js }}
-  </script>
+  <div class="comment-box" id="comments"></div>
 </body>
 </html>
 """
 
-CLIENT_JS_BASE = r"""
-async function postComment(text) {{
-  const res = await fetch('/api/comment', {{
-    method: 'POST',
-    headers: {{'Content-Type':'application/json'}},
-    body: JSON.stringify({{text}})
-  }});
-  return await res.text();
-}}
-
-document.getElementById('comment-form').addEventListener('submit', async (e) => {{
-  e.preventDefault();
-  const val = document.getElementById('comment').value;
-  const apiBox = document.getElementById('api');
-  const unsafeBox = document.getElementById('unsafe');
-  const safeBox = document.getElementById('safe');
-
-  const html = await postComment(val);
-  apiBox.textContent = html; // Show raw server response
-  {inject}
-  safeBox.textContent = html; // ✅ safe path
-}});
-"""
-
-def build_client_js(mode):
-    if mode == "insecure":
-        inject = "unsafeBox.innerHTML = html;    // 🧨 vulnerable sink"
-    else:
-        inject = "unsafeBox.textContent = html;  // ✅ safe (secure mode)"
-    return CLIENT_JS_BASE.format(inject=inject)
-
 @app.route("/")
 def index():
-    mode = request.args.get("mode", "secure")
-    nonce = secrets.token_urlsafe(16)
-    csp = f"default-src 'self'; script-src 'self' 'nonce-{nonce}'; object-src 'none'; report-uri /csp-report;"
-    client_js = build_client_js(mode)
-    html = render_template_string(
-        TEMPLATE,
-        csp=csp,
-        nonce=nonce,
-        client_js=client_js,
-        mode=mode,
-        reports=REPORTS,
-        insecure_label=("Unsafe Render (innerHTML)" if mode == "insecure" else "Safe Render (textContent)"),
-        insecure_class=("danger" if mode == "insecure" else "safe")
-    )
-    return Response(html, headers={"Content-Security-Policy": csp})
+    nonce = secrets.token_urlsafe(8)
+    resp = make_response(render_template_string(TEMPLATE, comments=comments, nonce=nonce))
+    resp.headers['Content-Security-Policy'] = f"script-src 'self' 'nonce-{nonce}'"
+    return resp
 
-@app.route("/api/comment", methods=["POST"])
-def api_comment():
-    data = request.get_json(silent=True) or {}
-    # Intentionally unsanitized for demo
-    return data.get("text", "")
-
-@app.route("/csp-report", methods=["POST"])
-def csp_report():
-    try:
-        REPORTS.append(request.get_json(force=True))
-    except Exception:
-        pass
-    return "", 204
+@app.route("/submit", methods=["POST"])
+def submit():
+    comment = request.form.get("comment", "")
+    if comment:
+        comments.append(comment)
+    return ('', 204)
 
 if __name__ == "__main__":
     app.run(port=5003, debug=True)
